@@ -70,32 +70,47 @@ LOGS: list[dict[str, str]] = [
 
 @mcp.tool()
 def list_incidents(
-    severity: str = "",
-    status: str = "",
+    severity: str | None = None,
+    status: str | None = None,
     limit: int = 20,
 ) -> dict[str, Any]:
     """List incidents with optional severity and status filters."""
+
+    # Normalize optional filters to handle None and whitespace.
+    severity = (severity or "").strip().lower()
+    status = (status or "").strip().lower()
+
+    # Validate the result limit.
     if not 1 <= limit <= 100:
         return {"error": "limit must be between 1 and 100"}
 
-    if severity and severity.lower() not in {
+    # Validate severity filter.
+    if severity and severity not in {
         "critical", "high", "medium", "low"
     }:
         return {"error": "Invalid severity filter"}
 
-    if status and status.lower() not in {
+    # Validate status filter.
+    if status and status not in {
         "open", "investigating", "resolved"
     }:
         return {"error": "Invalid status filter"}
 
+    # Apply filters.
     results = [
         item
         for item in INCIDENTS.values()
-        if (not severity or item["severity"] == severity.lower())
-        and (not status or item["status"] == status.lower())
+        if (not severity or item["severity"] == severity)
+        and (not status or item["status"] == status)
     ]
 
-    return {"count": len(results[:limit]), "incidents": results[:limit]}
+    # Apply limit and return results.
+    limited_results = results[:limit]
+
+    return {
+        "count": len(limited_results),
+        "incidents": limited_results,
+    }
 
 
 @mcp.tool()

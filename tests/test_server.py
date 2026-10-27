@@ -11,6 +11,11 @@ def test_list_incidents():
     result = list_incidents()
     assert result["count"] == 3
 
+def test_list_incidents_accepts_none_filters():
+    result = list_incidents(severity=None, status=None)
+
+    assert result["count"] == 3
+    assert len(result["incidents"]) == 3
 
 def test_filter_incidents_by_severity():
     result = list_incidents(severity="high")
