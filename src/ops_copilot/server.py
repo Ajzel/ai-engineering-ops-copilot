@@ -68,6 +68,32 @@ LOGS: list[dict[str, str]] = [
 ]
 
 
+# Synthetic service metrics for local development and testing.
+# These values are simulated, not live production measurements.
+SERVICE_METRICS: dict[str, dict[str, Any]] = {
+    "prediction-api": {
+        "response_latency_ms": 240.0,
+        "error_rate_percent": 2.5,
+        "requests_per_minute": 1200,
+        "cpu_usage_percent": 65.0,
+        "memory_usage_percent": 72.0,
+    },
+    "incident-database": {
+        "response_latency_ms": 850.0,
+        "error_rate_percent": 8.0,
+        "requests_per_minute": 900,
+        "cpu_usage_percent": 78.0,
+        "memory_usage_percent": 84.0,
+    },
+    "document-retrieval": {
+        "response_latency_ms": 310.0,
+        "error_rate_percent": 1.2,
+        "requests_per_minute": 450,
+        "cpu_usage_percent": 48.0,
+        "memory_usage_percent": 60.0,
+    },
+}
+
 @mcp.tool()
 def list_incidents(
     severity: str | None = None,
@@ -238,6 +264,40 @@ def analyze_incident_tool(incident_id: str) -> dict[str, Any]:
 
     return analyze_incident(incident, LOGS)
 
+
+@mcp.tool()
+def get_service_metrics(
+    service: str | None = None,
+) -> dict[str, Any]:
+    """Retrieve simulated health metrics for known services."""
+
+    service = (service or "").strip().lower()
+
+    if service:
+        metrics = SERVICE_METRICS.get(service)
+
+        if metrics is None:
+            return {
+                "error": f"Unknown service: {service}",
+                "available_services": sorted(SERVICE_METRICS),
+            }
+
+        return {
+            "service": service,
+            "metrics": metrics.copy(),
+            "data_source": "synthetic development data",
+            "is_simulated": True,
+        }
+
+    return {
+        "services": {
+            name: metrics.copy()
+            for name, metrics in sorted(SERVICE_METRICS.items())
+        },
+        "count": len(SERVICE_METRICS),
+        "data_source": "synthetic development data",
+        "is_simulated": True,
+    }
 
 
 if __name__ == "__main__":

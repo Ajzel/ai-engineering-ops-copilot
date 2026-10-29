@@ -5,6 +5,7 @@ from ops_copilot.server import (
     search_application_logs,
     analyze_incident_tool,
     analyze_error_patterns,
+    get_service_metrics,
 )
 
 
@@ -104,3 +105,34 @@ def test_analyze_error_patterns_rejects_invalid_limit():
     assert result == {
         "error": "limit must be between 1 and 100"
     }
+
+
+def test_get_service_metrics_returns_known_service():
+    result = get_service_metrics(service="incident-database")
+
+    assert result["service"] == "incident-database"
+    assert result["is_simulated"] is True
+    assert result["metrics"]["response_latency_ms"] > 0
+
+
+def test_get_service_metrics_is_case_insensitive():
+    result = get_service_metrics(service="INCIDENT-DATABASE")
+
+    assert result["service"] == "incident-database"
+
+
+def test_get_service_metrics_rejects_unknown_service():
+    result = get_service_metrics(service="unknown-service")
+
+    assert result["error"] == "Unknown service: unknown-service"
+    assert "incident-database" in result["available_services"]
+
+
+def test_get_service_metrics_returns_all_services():
+    result = get_service_metrics()
+
+    assert result["count"] == 3
+    assert result["is_simulated"] is True
+    assert "prediction-api" in result["services"]
+    assert "incident-database" in result["services"]
+    assert "document-retrieval" in result["services"]
