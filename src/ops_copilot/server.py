@@ -158,6 +158,71 @@ def search_application_logs(
 
     return {"count": len(results[:limit]), "logs": results[:limit]}
 
+
+@mcp.tool()
+def analyze_error_patterns(
+    service: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Group application errors by message and report their frequency."""
+
+    if not 1 <= limit <= 100:
+        return {"error": "limit must be between 1 and 100"}
+
+    service = (service or "").strip().lower()
+
+    # Use the existing application log dataset.
+    matching_logs = [
+        log
+        for log in LOGS
+        if str(log.get("level", "")).upper() in {"ERROR", "CRITICAL"}
+        and (
+            not service
+            or str(log.get("service", "")).lower() == service
+        )
+    ]
+
+    # Group errors using their exact message text.
+    patterns: dict[str, dict[str, Any]] = {}
+
+    for log in matching_logs:
+        message = str(log.get("message", "Unknown error")).strip()
+        log_service = log.get("service", "unknown")
+
+        if message not in patterns:
+            patterns[message] = {
+                "message": message,
+                "count": 0,
+                "services": [],
+                "levels": [],
+            }
+
+        pattern = patterns[message]
+        pattern["count"] += 1
+
+        if log_service not in pattern["services"]:
+            pattern["services"].append(log_service)
+
+        level = str(log.get("level", "UNKNOWN")).upper()
+        if level not in pattern["levels"]:
+            pattern["levels"].append(level)
+
+    ranked_patterns = sorted(
+        patterns.values(),
+        key=lambda item: (-item["count"], item["message"]),
+    )
+
+    results = ranked_patterns[:limit]
+
+    return {
+        "service_filter": service or None,
+        "total_matching_logs": len(matching_logs),
+        "unique_error_patterns": len(patterns),
+        "returned_patterns": len(results),
+        "patterns": results,
+        "data_source": "synthetic application logs",
+    }
+
 @mcp.tool()
 def analyze_incident_tool(incident_id: str) -> dict[str, Any]:
     """Analyze an incident and its associated logs.
@@ -172,6 +237,7 @@ def analyze_incident_tool(incident_id: str) -> dict[str, Any]:
         return {"error": f"Incident not found: {normalized_id}"}
 
     return analyze_incident(incident, LOGS)
+
 
 
 if __name__ == "__main__":
