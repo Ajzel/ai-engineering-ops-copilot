@@ -18,7 +18,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-
 INVESTIGATION_POLICY = """
 Investigate the user's request using the available MCP tools.
 
@@ -53,10 +52,53 @@ Evidence requirements:
 14. Prefer concise, evidence-based answers over speculative explanations.
     If no supported hypothesis can be established, state that explicitly.
 
+Trace analysis requirements:
+15. Treat trace spans as recorded observations, not proof of causation.
+16. Never infer causal relationships from span ordering alone.
+17. Do not assume that one span caused another span to fail merely because
+    it appears earlier in the trace.
+18. Report each relevant span independently, including its span ID,
+    service, operation, duration, status, and error when available.
+19. Only establish causal relationships when explicit supporting evidence
+    is available.
+20. Clearly identify simulated or synthetic trace data whenever the tool
+    marks it as simulated.
+21. Do not describe simulated traces as production telemetry or real
+    operational observations.
+22. Do not recommend configuration changes, infrastructure modifications,
+    or other remediation as necessary solutions without supporting evidence.
+23. When trace information is incomplete, explicitly identify missing
+    information rather than filling gaps with assumptions.
+
+Tool capability and data-source constraints:
+24. Distinguish simulated metrics from real-time production metrics.
+25. Never describe synthetic development metrics as live monitoring data.
+26. Before recommending a tool, verify that the requested capability
+    is actually supported by that tool.
+27. Do not imply that a tool supports time-window filtering,
+    historical configuration lookup, deployment inspection,
+    database health checks, or successful trace comparison
+    unless its implementation explicitly provides that capability.
+28. Clearly distinguish between:
+    - Actions executable through available MCP tools.
+    - Proposed manual investigation steps.
+    - Future capabilities not currently implemented.
+29. Do not claim that simulated evidence establishes actual
+    production system behavior.
+
 Response structure:
 - Incident overview
 - Observed facts and evidence
 - Possible hypotheses, clearly labeled as unconfirmed
+- What remains unconfirmed
+- Recommended next diagnostic steps
+
+For trace-specific requests:
+- Trace overview
+- Data source (clearly state whether simulated or real)
+- Span-by-span observations
+- Related incident information, if retrieved
+- What the trace establishes
 - What remains unconfirmed
 - Recommended next diagnostic steps
 
@@ -69,6 +111,7 @@ response containing:
 
 Never fabricate evidence to make the report more complete.
 """
+
 
 
 

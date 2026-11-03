@@ -94,6 +94,69 @@ SERVICE_METRICS: dict[str, dict[str, Any]] = {
     },
 }
 
+
+# Synthetic distributed traces for local development and testing.
+# These traces are simulated, not collected from a production tracing system.
+TRACES: dict[str, dict[str, Any]] = {
+    "trace-001": {
+        "trace_id": "trace-001",
+        "incident_id": "INC-001",
+        "status": "error",
+        "total_duration_ms": 5230.0,
+        "spans": [
+            {
+                "span_id": "span-001",
+                "service": "prediction-api",
+                "operation": "predict",
+                "duration_ms": 5230.0,
+                "status": "error",
+                "error": "Prediction request timed out after 5000 ms",
+            },
+        ],
+    },
+    "trace-002": {
+        "trace_id": "trace-002",
+        "incident_id": "INC-002",
+        "status": "error",
+        "total_duration_ms": 1850.0,
+        "spans": [
+            {
+                "span_id": "span-002",
+                "service": "incident-database",
+                "operation": "acquire_connection",
+                "duration_ms": 1000.0,
+                "status": "error",
+                "error": "Database connection pool exhausted",
+            },
+            {
+                "span_id": "span-003",
+                "service": "incident-database",
+                "operation": "connect",
+                "duration_ms": 850.0,
+                "status": "error",
+                "error": "Database connection attempt timed out",
+            },
+        ],
+    },
+    "trace-003": {
+        "trace_id": "trace-003",
+        "incident_id": "INC-003",
+        "status": "ok",
+        "total_duration_ms": 310.0,
+        "spans": [
+            {
+                "span_id": "span-004",
+                "service": "document-retrieval",
+                "operation": "vector_search",
+                "duration_ms": 310.0,
+                "status": "ok",
+                "error": None,
+            },
+        ],
+    },
+}
+
+
 @mcp.tool()
 def list_incidents(
     severity: str | None = None,
@@ -250,22 +313,6 @@ def analyze_error_patterns(
     }
 
 @mcp.tool()
-def analyze_incident_tool(incident_id: str) -> dict[str, Any]:
-    """Analyze an incident and its associated logs.
-
-    Returns evidence-based findings. Root cause is not confirmed
-    automatically; findings summarize observed log activity.
-    """
-    normalized_id = incident_id.strip().upper()
-    incident = INCIDENTS.get(normalized_id)
-
-    if incident is None:
-        return {"error": f"Incident not found: {normalized_id}"}
-
-    return analyze_incident(incident, LOGS)
-
-
-@mcp.tool()
 def get_service_metrics(
     service: str | None = None,
 ) -> dict[str, Any]:
@@ -300,5 +347,51 @@ def get_service_metrics(
     }
 
 
+
+@mcp.tool()
+def get_trace_details(trace_id: str) -> dict[str, Any]:
+    """Retrieve a synthetic distributed trace by its trace ID."""
+
+    trace_id = (trace_id or "").strip()
+
+    if not trace_id:
+        return {"error": "trace_id must not be empty"}
+
+    trace = TRACES.get(trace_id)
+
+    if trace is None:
+        return {
+            "error": f"Trace not found: {trace_id}",
+            "available_trace_ids": sorted(TRACES.keys()),
+        }
+
+    # Return a copy so callers cannot mutate the stored trace data.
+    return {
+        "trace": {
+            **trace,
+            "spans": [span.copy() for span in trace["spans"]],
+        },
+        "data_source": "synthetic development data",
+        "is_simulated": True,
+    }
+
+
+@mcp.tool()
+def analyze_incident_tool(incident_id: str) -> dict[str, Any]:
+    """Analyze an incident and its associated logs.
+
+    Returns evidence-based findings. Root cause is not confirmed
+    automatically; findings summarize observed log activity.
+    """
+    normalized_id = incident_id.strip().upper()
+    incident = INCIDENTS.get(normalized_id)
+
+    if incident is None:
+        return {"error": f"Incident not found: {normalized_id}"}
+
+    return analyze_incident(incident, LOGS)
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
+

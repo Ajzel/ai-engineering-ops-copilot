@@ -6,6 +6,7 @@ from ops_copilot.server import (
     analyze_incident_tool,
     analyze_error_patterns,
     get_service_metrics,
+    get_trace_details,
 )
 
 
@@ -136,3 +137,38 @@ def test_get_service_metrics_returns_all_services():
     assert "prediction-api" in result["services"]
     assert "incident-database" in result["services"]
     assert "document-retrieval" in result["services"]
+
+
+def test_get_trace_details_returns_known_trace():
+    result = get_trace_details("trace-002")
+
+    assert "error" not in result
+    assert result["trace"]["trace_id"] == "trace-002"
+    assert result["trace"]["incident_id"] == "INC-002"
+    assert len(result["trace"]["spans"]) == 2
+    assert result["is_simulated"] is True
+    assert result["data_source"] == "synthetic development data"
+
+
+def test_get_trace_details_returns_span_information():
+    result = get_trace_details("trace-001")
+
+    span = result["trace"]["spans"][0]
+
+    assert span["service"] == "prediction-api"
+    assert span["operation"] == "predict"
+    assert span["duration_ms"] > 0
+    assert span["status"] == "error"
+
+
+def test_get_trace_details_handles_unknown_trace():
+    result = get_trace_details("trace-999")
+
+    assert result["error"] == "Trace not found: trace-999"
+    assert "trace-001" in result["available_trace_ids"]
+
+
+def test_get_trace_details_rejects_empty_trace_id():
+    result = get_trace_details("   ")
+
+    assert result == {"error": "trace_id must not be empty"}
