@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from mcp_use import MCPAgent, MCPClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +17,110 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def get_provider_configs() -> list[dict]:
+    """Return configured providers in priority order."""
+
+    providers = []
+
+    groq_key = os.getenv("GROQ_API_KEY")
+    if groq_key:
+        providers.append({
+            "name": "Groq",
+            "model": os.getenv(
+                "GROQ_MODEL", "openai/gpt-oss-120b"
+            ),
+            "create_llm": lambda: ChatGroq(
+                model=os.getenv(
+                    "GROQ_MODEL", "openai/gpt-oss-120b"
+                ),
+                api_key=groq_key,
+                temperature=0,
+                max_retries=0,
+            ),
+        })
+
+    openrouter_key_1 = os.getenv("OPENROUTER_API_KEY_1")
+    if openrouter_key_1:
+        providers.append({
+            "name": "OpenRouter-DeepSeek",
+            "model": os.getenv(
+                "OPENROUTER_MODEL_1",
+                "deepseek/deepseek-v4.1-flash",
+            ),
+            "create_llm": lambda: ChatOpenAI(
+                model=os.getenv(
+                    "OPENROUTER_MODEL_1",
+                    "deepseek/deepseek-v4.1-flash",
+                ),
+                api_key=openrouter_key_1,
+                base_url="https://openrouter.ai/api/v1",
+                temperature=0,
+                max_retries=0,
+                timeout=60,
+            ),
+        })
+
+    openrouter_key_2 = os.getenv("OPENROUTER_API_KEY_2")
+    if openrouter_key_2:
+        providers.append({
+            "name": "OpenRouter-GLM",
+            "model": os.getenv(
+                "OPENROUTER_MODEL_2",
+                "z-ai/glm-5.3-flash",
+            ),
+            "create_llm": lambda: ChatOpenAI(
+                model=os.getenv(
+                    "OPENROUTER_MODEL_2",
+                    "z-ai/glm-5.3-flash",
+                ),
+                api_key=openrouter_key_2,
+                base_url="https://openrouter.ai/api/v1",
+                temperature=0,
+                max_retries=0,
+                timeout=60,
+            ),
+        })
+
+    return providers
+
+
+def is_retryable_provider_error(exc: Exception) -> bool:
+    """Identify provider failures that justify trying another provider."""
+
+    message = str(exc).lower()
+
+    # Invalid tool calls and oversized requests are not
+    # ordinary provider availability failures.
+    non_retryable = [
+        "tool call validation failed",
+        "invalid_tool_call",
+        "tool_use_failed",
+        "413",
+        "context_length_exceeded",
+        "request_too_large",
+    ]
+
+    if any(term in message for term in non_retryable):
+        return False
+
+    retryable = [
+        "429",
+        "rate_limit",
+        "rate limit",
+        "500",
+        "502",
+        "503",
+        "504",
+        "timeout",
+        "timed out",
+        "connection error",
+        "connection reset",
+        "service unavailable",
+    ]
+
+    return any(term in message for term in retryable)
 
 
 INVESTIGATION_POLICY = """
@@ -85,7 +190,68 @@ Tool capability and data-source constraints:
     - Future capabilities not currently implemented.
 29. Do not claim that simulated evidence establishes actual
     production system behavior.
+    
+Deployment investigation requirements:
+30. Treat deployment records as evidence of recorded deployment
+    events, not proof of incident causation.
+31. Never infer that a deployment caused an incident solely
+    because its timestamp or change description appears relevant.
+32. Do not assume incident log timestamps are available.
+    The current search_application_logs tool does not return timestamps.
+33. Do not use static synthetic service metrics to establish
+    historical trends or temporal relationships with deployments.
+34. Do not claim that get_trace_details can capture new traces.
+    It only retrieves existing trace records.
+35. Do not recommend rollback, redeployment, or configuration
+    changes as necessary actions without sufficient supporting
+    evidence and operational validation.
+36. Clearly distinguish deployment status from application health.
+    A failed deployment does not automatically establish that
+    the application is unhealthy.
+    
+Temporal correlation requirements:
+37. Never infer an incident occurrence timestamp from its
+    current status, including "open", "investigating", or "resolved".
+38. Never describe deployments as occurring before or after
+    an incident unless the incident timestamp is explicitly
+    available.
+39. Deployment timestamps alone cannot establish temporal
+    proximity to an incident.
+40. Do not claim that the correlation tool evaluates temporal
+    proximity unless its actual implementation performs
+    timestamp-based comparison using both incident and
+    deployment timestamps.
+41. Distinguish service matching and keyword overlap from
+    temporal correlation.
+42. Never recommend an unavailable MCP capability as an action
+    the copilot can execute. Clearly label it as a manual investigation
+    requiring an external system.
 
+43. The current search_application_logs tool does not support
+    timestamp-based filtering or return log timestamps.
+
+44. The current get_service_metrics tool returns static synthetic
+    values. It cannot retrieve historical metrics, connection-pool
+    usage trends, or before-and-after deployment comparisons.
+
+45. The current deployment tools return deployment metadata and
+    change descriptions only. They do not retrieve configuration
+    diffs, pipeline execution logs, rollback details, or
+    post-deployment health-check results.
+
+46. The current tools cannot independently check downstream
+    database health, network conditions, or external infrastructure.
+    Identify these as evidence gaps rather than claiming to have
+    investigated them.
+    
+Recommendation constraints:
+- Prioritize actions that can actually be performed with available MCP tools.
+- Separate executable MCP actions from proposed external/manual actions.
+- Do not repeatedly recommend unavailable capabilities as though
+  they were implemented.
+- If no further investigation can be performed with available tools,
+  state that explicitly.
+  
 Response structure:
 - Incident overview
 - Observed facts and evidence
@@ -148,39 +314,35 @@ def create_mcp_config() -> dict:
     }
 
 
-async def run_agent():
-    """Run the AI Engineering Operations Copilot."""
-    api_key = os.getenv("GROQ_API_KEY")
-    model_name = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
-    if not api_key or api_key == "your_actual_groq_api_key":
+async def run_agent():
+    """Run the copilot with automatic multi-provider fallback."""
+
+    providers = get_provider_configs()
+
+    if not providers:
         raise RuntimeError(
-            "GROQ_API_KEY is missing. Configure it in the project .env file."
+            "No AI providers configured. Check your .env file."
         )
 
     client = MCPClient.from_dict(create_mcp_config())
 
     try:
-        llm = ChatGroq(
-            model=model_name,
-            api_key=api_key,
-            temperature=0,
-        )
-
-        agent = MCPAgent(
-            llm=llm,
-            client=client,
-            max_steps=10,
-            memory_enabled=True,
-        )
-
         print("\nAI Engineering Operations Copilot")
-        print(f"Model: {model_name}")
-        print("Ask about incidents and logs. Type 'exit' to quit.\n")
+        print("Configured providers:")
+
+        for index, provider in enumerate(providers, start=1):
+            print(
+                f"{index}. {provider['name']} "
+                f"({provider['model']})"
+            )
+
+        print("\nAsk about incidents and logs. Type 'exit' to quit.\n")
 
         while True:
             try:
                 question = input("You: ").strip()
+
             except (EOFError, KeyboardInterrupt):
                 print("\nExiting copilot.")
                 break
@@ -192,24 +354,72 @@ async def run_agent():
                 print("Please enter an investigation question.")
                 continue
 
-            try:
-                prompt = build_investigation_prompt(question)
-                response = await agent.run(prompt)
-                print(f"\nCopilot: {response}\n")
+            prompt = build_investigation_prompt(question)
+            succeeded = False
 
-            except Exception as exc:
-                # Log the error for debugging; keep the interactive session alive.
-                logger.exception("Investigation request failed")
+            for index, provider in enumerate(providers):
+                provider_name = provider["name"]
+
+                print(f"\nTrying provider: {provider_name}")
+
+                try:
+                    llm = provider["create_llm"]()
+
+                    agent = MCPAgent(
+                        llm=llm,
+                        client=client,
+                        max_steps=8,
+                        memory_enabled=True,
+                        system_prompt=INVESTIGATION_POLICY,
+                        retry_on_error=False,
+                    )
+
+                    response = await agent.run(prompt)
+
+                    print(f"\nProvider used: {provider_name}")
+                    print(f"\nCopilot: {response}\n")
+
+                    succeeded = True
+                    break
+
+                except Exception as exc:
+                    logger.exception(
+                        "Provider %s failed",
+                        provider_name,
+                    )
+
+                    if not is_retryable_provider_error(exc):
+                        print(
+                            f"\nNon-retryable error from "
+                            f"{provider_name}: {type(exc).__name__}"
+                        )
+                        print(str(exc)[:1000])
+                        break
+
+                    print(
+                        f"\n{provider_name} encountered a "
+                        "temporary provider failure."
+                    )
+
+                    if index < len(providers) - 1:
+                        print("Switching to the next provider...")
+                    else:
+                        print("All configured providers failed.")
+
+            if not succeeded:
                 print(
-                    "\nThe investigation failed. Check the terminal logs "
-                    "for details. You can try again or enter 'exit'.\n"
+                    "\nInvestigation unsuccessful. "
+                    "Check the terminal logs for details.\n"
                 )
 
     finally:
         try:
             await client.close_all_sessions()
+
         except Exception:
-            logger.exception("Failed to close MCP sessions cleanly")
+            logger.exception(
+                "Failed to close MCP sessions cleanly"
+            )
 
 
 if __name__ == "__main__":

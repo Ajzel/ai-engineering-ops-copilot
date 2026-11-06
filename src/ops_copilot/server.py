@@ -1,4 +1,4 @@
-
+import re
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -155,6 +155,45 @@ TRACES: dict[str, dict[str, Any]] = {
         ],
     },
 }
+
+DEPLOYMENTS: list[dict[str, Any]] = [
+    {
+        "deployment_id": "DEP-001",
+        "service": "prediction-api",
+        "version": "v1.2.0",
+        "environment": "production",
+        "deployed_at": "2026-10-28T10:30:00Z",
+        "status": "successful",
+        "changes": "Updated prediction API response handling.",
+    },
+    {
+        "deployment_id": "DEP-002",
+        "service": "incident-database",
+        "version": "v2.1.0",
+        "environment": "production",
+        "deployed_at": "2026-10-29T14:00:00Z",
+        "status": "successful",
+        "changes": "Updated database connection configuration.",
+    },
+    {
+        "deployment_id": "DEP-003",
+        "service": "incident-database",
+        "version": "v2.1.1",
+        "environment": "production",
+        "deployed_at": "2026-10-30T09:15:00Z",
+        "status": "failed",
+        "changes": "Attempted database connection pool adjustment.",
+    },
+    {
+        "deployment_id": "DEP-004",
+        "service": "document-retrieval",
+        "version": "v1.4.0",
+        "environment": "staging",
+        "deployed_at": "2026-10-31T11:45:00Z",
+        "status": "successful",
+        "changes": "Optimized vector search processing.",
+    },
+]
 
 
 @mcp.tool()
@@ -390,6 +429,217 @@ def analyze_incident_tool(incident_id: str) -> dict[str, Any]:
         return {"error": f"Incident not found: {normalized_id}"}
 
     return analyze_incident(incident, LOGS)
+
+@mcp.tool()
+def get_deployment_history(
+    service: str | None = None,
+    environment: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """
+    Retrieve deployment history with optional service
+    and environment filters.
+    """
+
+    service = (service or "").strip().lower()
+    environment = (environment or "").strip().lower()
+
+    if not 1 <= limit <= 100:
+        return {
+            "error": "Limit must be between 1 and 100."
+        }
+
+    deployments = DEPLOYMENTS.copy()
+
+    if service:
+        deployments = [
+            deployment
+            for deployment in deployments
+            if deployment["service"].lower() == service
+        ]
+
+    if environment:
+        deployments = [
+            deployment
+            for deployment in deployments
+            if deployment["environment"].lower() == environment
+        ]
+
+    deployments.sort(
+        key=lambda deployment: deployment["deployed_at"],
+        reverse=True,
+    )
+
+    return {
+        "data_source": "synthetic development data",
+        "is_simulated": True,
+        "filters": {
+            "service": service or None,
+            "environment": environment or None,
+        },
+        "total_deployments": len(deployments),
+        "returned_deployments": len(deployments[:limit]),
+        "deployments": deployments[:limit],
+    }
+
+@mcp.tool()
+def correlate_incident_changes(
+    incident_id: str,
+) -> dict[str, Any]:
+    """
+    Correlate an incident with deployment changes associated
+    with the same service.
+
+    Identifies potential relationships using shared service
+    names and matching terms in incident evidence and
+    deployment descriptions.
+
+    Correlation does not establish causation.
+    """
+
+    incident_id = (incident_id or "").strip().upper()
+
+    if not incident_id:
+        return {
+            "error": "Incident ID cannot be empty."
+        }
+
+    # 1. Retrieve the incident
+    incident = INCIDENTS.get(incident_id)
+
+    if not incident:
+        return {
+            "error": f"Incident {incident_id} was not found.",
+            "incident_id": incident_id,
+        }
+
+    service = incident.get("service", "")
+
+    # 2. Retrieve logs associated with the incident
+    incident_logs = [
+        log
+        for log in LOGS
+        if log.get("incident_id", "").upper() == incident_id
+    ]
+
+    # 3. Build searchable incident evidence
+    incident_text = " ".join([
+        str(incident.get("title", "")),
+        str(incident.get("description", "")),
+        *[
+            str(log.get("message", ""))
+            for log in incident_logs
+        ],
+    ]).lower()
+
+    stopwords = {
+        "the", "and", "for", "with", "from", "that",
+        "this", "was", "were", "has", "have", "had",
+        "some", "requests", "request", "service",
+        "updated", "update", "attempted", "attempt",
+    }
+
+    incident_terms = {
+        term
+        for term in re.findall(r"[a-z0-9]+", incident_text)
+        if len(term) > 2 and term not in stopwords
+    }
+
+    # 4. Retrieve deployments belonging to the same service
+    service_deployments = [
+        deployment
+        for deployment in DEPLOYMENTS
+        if deployment.get("service", "").lower() == service.lower()
+    ]
+
+    # 5. Compare deployment descriptions with incident evidence
+    candidates = []
+
+    for deployment in service_deployments:
+        change_description = str(
+            deployment.get("changes", "")
+        )
+
+        deployment_terms = {
+            term
+            for term in re.findall(
+                r"[a-z0-9]+",
+                change_description.lower(),
+            )
+            if len(term) > 2 and term not in stopwords
+        }
+
+        matched_terms = sorted(
+            incident_terms.intersection(deployment_terms)
+        )
+
+        if matched_terms:
+            relevance = "potentially_relevant"
+        else:
+            relevance = "same_service_only"
+
+        candidates.append({
+            "deployment_id": deployment.get("deployment_id"),
+            "service": deployment.get("service"),
+            "version": deployment.get("version"),
+            "environment": deployment.get("environment"),
+            "deployed_at": deployment.get("deployed_at"),
+            "status": deployment.get("status"),
+            "changes": change_description,
+            "matched_terms": matched_terms,
+            "relevance": relevance,
+        })
+
+    # 6. Return evidence and limitations
+    return {
+        "incident_id": incident_id,
+        "incident_title": incident.get("title"),
+        "service": service,
+
+        "data_source": "synthetic development data",
+        "is_simulated": True,
+
+        "incident_evidence": {
+            "description": incident.get("description"),
+            "related_logs": [
+                {
+                    "level": log.get("level"),
+                    "service": log.get("service"),
+                    "message": log.get("message"),
+                }
+                for log in incident_logs
+            ],
+        },
+
+        "deployment_analysis": {
+            "total_service_deployments": len(service_deployments),
+            "candidates": candidates,
+        },
+
+        "correlation_assessment": {
+            "status": "potential_relationships_identified"
+            if candidates else "no_matching_deployments",
+            "matching_basis": [
+                "Same service",
+                "Shared terms between incident evidence and deployment descriptions",
+            ],
+            "causation_established": False,
+            "conclusion": (
+                "Deployment records contain potential investigation "
+                "candidates. The available evidence does not establish "
+                "that any deployment caused the incident."
+            ),
+        },
+
+        "evidence_gaps": [
+            "Incident logs do not contain timestamps.",
+            "Historical time-series metrics are not available.",
+            "Deployment configuration diffs are not available.",
+            "Post-deployment health checks are not available.",
+        ],
+    }
+
+
 
 
 if __name__ == "__main__":

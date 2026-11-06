@@ -7,6 +7,8 @@ from ops_copilot.server import (
     analyze_error_patterns,
     get_service_metrics,
     get_trace_details,
+    get_deployment_history,
+    correlate_incident_changes,
 )
 
 
@@ -172,3 +174,158 @@ def test_get_trace_details_rejects_empty_trace_id():
     result = get_trace_details("   ")
 
     assert result == {"error": "trace_id must not be empty"}
+
+def test_get_all_deployments():
+    result = get_deployment_history()
+
+    assert result["total_deployments"] == 4
+    assert result["returned_deployments"] == 4
+    assert result["is_simulated"] is True
+    assert len(result["deployments"]) == 4
+
+
+def test_filter_deployments_by_service():
+    result = get_deployment_history(service="incident-database")
+
+    assert result["total_deployments"] == 2
+
+    for deployment in result["deployments"]:
+        assert deployment["service"] == "incident-database"
+
+
+def test_filter_deployments_by_environment():
+    result = get_deployment_history(environment="production")
+
+    assert result["total_deployments"] == 3
+
+    for deployment in result["deployments"]:
+        assert deployment["environment"] == "production"
+
+
+def test_filter_deployments_by_service_and_environment():
+    result = get_deployment_history(
+        service="incident-database",
+        environment="production",
+    )
+
+    assert result["total_deployments"] == 2
+
+    for deployment in result["deployments"]:
+        assert deployment["service"] == "incident-database"
+        assert deployment["environment"] == "production"
+
+
+def test_deployment_limit_validation():
+    result = get_deployment_history(limit=0)
+
+    assert "error" in result
+    assert "between 1 and 100" in result["error"]
+
+
+def test_unknown_service_returns_empty_results():
+    result = get_deployment_history(service="unknown-service")
+
+    assert result["total_deployments"] == 0
+    assert result["returned_deployments"] == 0
+    assert result["deployments"] == []
+
+
+def test_deployment_data_is_simulated():
+    result = get_deployment_history()
+
+    assert result["data_source"] == "synthetic development data"
+    assert result["is_simulated"] is True
+
+
+def test_deployment_filters_are_case_insensitive():
+    result = get_deployment_history(
+        service="INCIDENT-DATABASE",
+        environment="PRODUCTION",
+    )
+
+    assert result["total_deployments"] == 2
+    
+def test_correlate_incident_changes_returns_incident():
+    result = correlate_incident_changes("INC-002")
+
+    assert result["incident_id"] == "INC-002"
+    assert result["incident_title"] == "Database connection timeout"
+    assert result["service"] == "incident-database"
+
+
+def test_correlate_incident_changes_finds_deployments():
+    result = correlate_incident_changes("INC-002")
+
+    candidates = result["deployment_analysis"]["candidates"]
+
+    assert len(candidates) == 2
+
+    deployment_ids = [
+        deployment["deployment_id"]
+        for deployment in candidates
+    ]
+
+    assert "DEP-002" in deployment_ids
+    assert "DEP-003" in deployment_ids
+
+
+def test_correlate_incident_changes_identifies_matching_terms():
+    result = correlate_incident_changes("INC-002")
+
+    candidates = result["deployment_analysis"]["candidates"]
+
+    dep003 = next(
+        deployment
+        for deployment in candidates
+        if deployment["deployment_id"] == "DEP-003"
+    )
+
+    assert "connection" in dep003["matched_terms"]
+    assert "pool" in dep003["matched_terms"]
+    assert dep003["relevance"] == "potentially_relevant"
+
+
+def test_correlate_incident_changes_returns_related_logs():
+    result = correlate_incident_changes("INC-002")
+
+    logs = result["incident_evidence"]["related_logs"]
+
+    assert len(logs) == 2
+
+    messages = [
+        log["message"]
+        for log in logs
+    ]
+
+    assert any("pool exhausted" in message for message in messages)
+    assert any("timed out" in message for message in messages)
+
+
+def test_correlate_incident_changes_does_not_establish_causation():
+    result = correlate_incident_changes("INC-002")
+
+    assessment = result["correlation_assessment"]
+
+    assert assessment["causation_established"] is False
+    assert "does not establish" in assessment["conclusion"]
+
+
+def test_correlate_incident_changes_identifies_simulated_data():
+    result = correlate_incident_changes("INC-002")
+
+    assert result["is_simulated"] is True
+    assert result["data_source"] == "synthetic development data"
+
+
+def test_correlate_incident_changes_handles_unknown_incident():
+    result = correlate_incident_changes("INC-999")
+
+    assert "error" in result
+    assert result["incident_id"] == "INC-999"
+
+
+def test_correlate_incident_changes_rejects_empty_id():
+    result = correlate_incident_changes("")
+
+    assert "error" in result
+    assert result["error"] == "Incident ID cannot be empty."
