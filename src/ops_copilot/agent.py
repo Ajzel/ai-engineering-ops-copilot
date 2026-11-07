@@ -123,6 +123,64 @@ def is_retryable_provider_error(exc: Exception) -> bool:
     return any(term in message for term in retryable)
 
 
+async def execute_with_provider_fallback(
+    question: str,
+    providers: list[dict],
+    client,
+    agent_factory=None,
+) -> tuple[str, str]:
+    """Execute an investigation with sequential provider fallback."""
+
+    factory = agent_factory or MCPAgent
+    last_error = None
+
+    for index, provider in enumerate(providers):
+        provider_name = provider["name"]
+
+        logger.info("Attempting provider: %s", provider_name)
+
+        try:
+            llm = provider["create_llm"]()
+
+            agent = factory(
+                llm=llm,
+                client=client,
+                max_steps=8,
+                memory_enabled=True,
+                system_prompt=INVESTIGATION_POLICY,
+                retry_on_error=False,
+            )
+
+            # The investigation policy is already supplied as the
+            # system prompt. Avoid appending it again to the question.
+            response = await agent.run(question)
+
+            logger.info("Provider succeeded: %s", provider_name)
+
+            return response, provider_name
+
+        except Exception as exc:
+            last_error = exc
+
+            logger.exception(
+                "Provider %s failed",
+                provider_name,
+            )
+
+            if not is_retryable_provider_error(exc):
+                raise
+
+            if index < len(providers) - 1:
+                logger.warning(
+                    "Retryable failure from %s. "
+                    "Switching to the next provider.",
+                    provider_name,
+                )
+
+    raise RuntimeError(
+        "All configured AI providers failed."
+    ) from last_error
+
 INVESTIGATION_POLICY = """
 Investigate the user's request using the available MCP tools.
 
