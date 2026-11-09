@@ -373,6 +373,7 @@ def create_mcp_config() -> dict:
 
 
 
+
 async def run_agent():
     """Run the copilot with automatic multi-provider fallback."""
 
@@ -406,69 +407,41 @@ async def run_agent():
                 break
 
             if question.lower() in {"exit", "quit"}:
+                print("\nExiting copilot.")
                 break
 
             if not question:
                 print("Please enter an investigation question.")
                 continue
 
-            prompt = build_investigation_prompt(question)
-            succeeded = False
+            try:
+                print("\nStarting investigation...")
 
-            for index, provider in enumerate(providers):
-                provider_name = provider["name"]
-
-                print(f"\nTrying provider: {provider_name}")
-
-                try:
-                    llm = provider["create_llm"]()
-
-                    agent = MCPAgent(
-                        llm=llm,
+                response, provider_name = (
+                    await execute_with_provider_fallback(
+                        question=question,
+                        providers=providers,
                         client=client,
-                        max_steps=8,
-                        memory_enabled=True,
-                        system_prompt=INVESTIGATION_POLICY,
-                        retry_on_error=False,
                     )
-
-                    response = await agent.run(prompt)
-
-                    print(f"\nProvider used: {provider_name}")
-                    print(f"\nCopilot: {response}\n")
-
-                    succeeded = True
-                    break
-
-                except Exception as exc:
-                    logger.exception(
-                        "Provider %s failed",
-                        provider_name,
-                    )
-
-                    if not is_retryable_provider_error(exc):
-                        print(
-                            f"\nNon-retryable error from "
-                            f"{provider_name}: {type(exc).__name__}"
-                        )
-                        print(str(exc)[:1000])
-                        break
-
-                    print(
-                        f"\n{provider_name} encountered a "
-                        "temporary provider failure."
-                    )
-
-                    if index < len(providers) - 1:
-                        print("Switching to the next provider...")
-                    else:
-                        print("All configured providers failed.")
-
-            if not succeeded:
-                print(
-                    "\nInvestigation unsuccessful. "
-                    "Check the terminal logs for details.\n"
                 )
+
+                print(f"\nProvider used: {provider_name}")
+                print(f"\nCopilot: {response}\n")
+
+            except Exception as exc:
+                logger.exception("Investigation failed")
+
+                print("\nInvestigation unsuccessful.")
+
+                if isinstance(exc, RuntimeError):
+                    print(f"Reason: {exc}")
+                else:
+                    print(
+                        f"Error: {type(exc).__name__}: "
+                        f"{str(exc)[:1000]}"
+                    )
+
+                print("Check the terminal logs for details.\n")
 
     finally:
         try:
