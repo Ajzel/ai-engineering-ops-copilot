@@ -47,6 +47,8 @@ def test_no_providers_configured(monkeypatch):
     "error",
     [
         "429 Too Many Requests",
+        "402 Payment Required"
+        "insufficient credits",
         "rate_limit exceeded",
         "500 Internal Server Error",
         "502 Bad Gateway",
@@ -247,3 +249,39 @@ async def test_memory_enabled_for_every_provider_attempt(mock_providers):
         assert config["memory_enabled"] is True
         assert config["retry_on_error"] is False
         assert config["system_prompt"] == agent_module.INVESTIGATION_POLICY
+        
+@pytest.mark.asyncio
+async def test_402_error_falls_back_to_glm(mock_providers):
+    agents = []
+
+    outcomes = iter([
+        Exception("429 Too Many Requests"),
+        Exception("402 Payment Required: insufficient credits"),
+        "GLM investigation completed successfully",
+    ])
+
+    def agent_factory(**kwargs):
+        mock_agent = Mock()
+        outcome = next(outcomes)
+
+        if isinstance(outcome, Exception):
+            mock_agent.run = AsyncMock(side_effect=outcome)
+        else:
+            mock_agent.run = AsyncMock(return_value=outcome)
+
+        agents.append(mock_agent)
+        return mock_agent
+
+    response, provider = await agent_module.execute_with_provider_fallback(
+        question="Investigate INC-002",
+        providers=mock_providers,
+        client=Mock(),
+        agent_factory=agent_factory,
+    )
+
+    assert response == "GLM investigation completed successfully"
+    assert provider == "OpenRouter-GLM"
+    assert len(agents) == 3
+
+    for provider_config in mock_providers:
+        assert provider_config["create_llm"].call_count == 1

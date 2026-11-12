@@ -38,6 +38,7 @@ def get_provider_configs() -> list[dict]:
                 api_key=groq_key,
                 temperature=0,
                 max_retries=0,
+                max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "1024")),
             ),
         })
 
@@ -59,6 +60,7 @@ def get_provider_configs() -> list[dict]:
                 temperature=0,
                 max_retries=0,
                 timeout=60,
+                max_tokens=int(os.getenv("OPENROUTER_MAX_TOKENS", "4096")),
             ),
         })
 
@@ -80,6 +82,7 @@ def get_provider_configs() -> list[dict]:
                 temperature=0,
                 max_retries=0,
                 timeout=60,
+                max_tokens=int(os.getenv("OPENROUTER_MAX_TOKENS", "4096")),
             ),
         })
 
@@ -118,6 +121,10 @@ def is_retryable_provider_error(exc: Exception) -> bool:
         "connection error",
         "connection reset",
         "service unavailable",
+        "402",
+        "payment required",
+        "insufficient credits",
+        "more credits",
     ]
 
     return any(term in message for term in retryable)
