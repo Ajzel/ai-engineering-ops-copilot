@@ -34,6 +34,47 @@ def test_get_incident_details():
     assert len(result["related_logs"]) == 2
 
 
+def test_get_incident_details_discovers_related_traces():
+    result = get_incident_details("INC-002")
+
+    assert result["related_trace_ids"] == ["trace-002"]
+    assert result["trace_count"] == 1
+    assert result["is_simulated"] is True
+    assert result["data_source"] == "synthetic development data"
+
+
+def test_get_incident_details_with_no_related_traces(monkeypatch):
+    from ops_copilot.server import TRACES
+
+    # Temporarily remove the incident's trace from the test data.
+    traces_without_incident = {
+        trace_id: trace
+        for trace_id, trace in TRACES.items()
+        if trace["incident_id"] != "INC-002"
+    }
+
+    monkeypatch.setattr(
+        "ops_copilot.server.TRACES",
+        traces_without_incident,
+    )
+
+    result = get_incident_details("INC-002")
+
+    assert result["related_trace_ids"] == []
+    assert result["trace_count"] == 0
+
+
+def test_discovered_trace_id_can_retrieve_trace_details():
+    incident_result = get_incident_details("INC-002")
+
+    trace_id = incident_result["related_trace_ids"][0]
+    trace_result = get_trace_details(trace_id)
+
+    assert trace_result["trace"]["trace_id"] == trace_id
+    assert trace_result["trace"]["incident_id"] == "INC-002"
+    assert len(trace_result["trace"]["spans"]) == 2
+
+
 def test_unknown_incident():
     result = get_incident_details("INC-999")
     assert "error" in result

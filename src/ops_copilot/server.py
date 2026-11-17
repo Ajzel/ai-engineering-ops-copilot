@@ -241,20 +241,37 @@ def list_incidents(
     }
 
 
+
 @mcp.tool()
 def get_incident_details(incident_id: str) -> dict[str, Any]:
-    """Return an incident and its associated application logs."""
-    incident_id = incident_id.strip().upper()
+    """Return incident details, associated logs, and related trace IDs."""
+
+    incident_id = (incident_id or "").strip().upper()
     incident = INCIDENTS.get(incident_id)
 
     if incident is None:
         return {"error": f"Incident not found: {incident_id}"}
 
     related_logs = [
-        log for log in LOGS if log["incident_id"] == incident_id
+        log.copy()
+        for log in LOGS
+        if log["incident_id"] == incident_id
     ]
 
-    return {"incident": incident, "related_logs": related_logs}
+    related_trace_ids = sorted(
+        trace_id
+        for trace_id, trace in TRACES.items()
+        if trace.get("incident_id") == incident_id
+    )
+
+    return {
+        "incident": incident.copy(),
+        "related_logs": related_logs,
+        "related_trace_ids": related_trace_ids,
+        "trace_count": len(related_trace_ids),
+        "data_source": "synthetic development data",
+        "is_simulated": True,
+    }
 
 
 @mcp.tool()

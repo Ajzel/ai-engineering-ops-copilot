@@ -110,6 +110,7 @@ def is_retryable_provider_error(exc: Exception) -> bool:
 
     retryable = [
         "429",
+        "402",
         "rate_limit",
         "rate limit",
         "500",
@@ -121,7 +122,6 @@ def is_retryable_provider_error(exc: Exception) -> bool:
         "connection error",
         "connection reset",
         "service unavailable",
-        "402",
         "payment required",
         "insufficient credits",
         "more credits",
@@ -221,6 +221,21 @@ Evidence requirements:
     a hypothesis unless the corresponding tool result confirms that action.
 14. Prefer concise, evidence-based answers over speculative explanations.
     If no supported hypothesis can be established, state that explicitly.
+
+Incident trace discovery:
+- When investigating an incident, call get_incident_details to retrieve
+  available incident evidence.
+- Inspect related_trace_ids in the incident details response.
+- If related_trace_ids contains trace IDs and trace analysis is relevant
+  to the request, call get_trace_details using those exact IDs.
+- Never invent or guess trace IDs.
+- If related_trace_ids is empty, state that no associated traces were
+  found in the available dataset.
+- If a trace lookup fails, report the failure rather than assuming
+  the trace was retrieved.
+- Treat all synthetic trace evidence as simulated development data.
+
+
 
 Trace analysis requirements:
 15. Treat trace spans as recorded observations, not proof of causation.
