@@ -16,6 +16,11 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
+
+# Prevent mcp_use logs from being emitted by both its own
+# handler and the root logger.
+logging.getLogger("mcp_use").propagate = False
+
 logger = logging.getLogger(__name__)
 
 

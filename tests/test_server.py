@@ -17,7 +17,7 @@ def test_list_incidents():
     assert result["count"] == 3
 
 def test_list_incidents_accepts_none_filters():
-    result = list_incidents(severity=None, status=None)
+    result = list_incidents(severity=None, status=None, limit=None)
 
     assert result["count"] == 3
     assert len(result["incidents"]) == 3

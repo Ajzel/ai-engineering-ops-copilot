@@ -200,13 +200,17 @@ DEPLOYMENTS: list[dict[str, Any]] = [
 def list_incidents(
     severity: str | None = None,
     status: str | None = None,
-    limit: int = 20,
+    limit: int | None = 20,
 ) -> dict[str, Any]:
     """List incidents with optional severity and status filters."""
 
     # Normalize optional filters to handle None and whitespace.
     severity = (severity or "").strip().lower()
     status = (status or "").strip().lower()
+
+    # Use the default limit when None is explicitly provided.
+    if limit is None:
+        limit = 20
 
     # Validate the result limit.
     if not 1 <= limit <= 100:
