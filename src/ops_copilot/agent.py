@@ -336,6 +336,19 @@ Recommendation constraints:
   they were implemented.
 - If no further investigation can be performed with available tools,
   state that explicitly.
+- When recommending get_service_metrics, describe it only as retrieval
+  of stored synthetic service metrics. Never claim it measures live
+  connection-pool usage, database latency, or production health.
+- When recommending search_application_logs or analyze_error_patterns,
+  describe them as operations on the available synthetic logs.
+  Do not claim that they retrieve recent logs, historical trends,
+  or time-filtered data.
+- If live metrics, database connection counts, infrastructure health,
+  or timestamp-based analysis would help, label those checks as
+  external/manual diagnostics requiring additional integrations.
+- For each recommended diagnostic, clearly distinguish what the
+  current MCP tool can retrieve from what remains unverified.
+
   
 Response structure:
 - Incident overview
