@@ -2,11 +2,11 @@
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from ops_copilot.data_sources.base import SyntheticDataSource
+from ops_copilot.data_sources.factory import create_data_source
 from ops_copilot.services.correlation import analyze_incident
 
 mcp = FastMCP("ai-engineering-ops-copilot")
-data_source = SyntheticDataSource()
+data_source = create_data_source()
 
 @mcp.tool()
 def list_incidents(
