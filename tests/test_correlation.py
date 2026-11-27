@@ -1,6 +1,6 @@
 
 from ops_copilot.services.correlation import analyze_incident
-from ops_copilot.server import INCIDENTS, LOGS
+from ops_copilot.data_sources.synthetic import INCIDENTS, LOGS
 
 
 def test_database_incident_analysis():

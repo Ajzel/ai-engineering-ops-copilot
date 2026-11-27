@@ -17,7 +17,7 @@ def test_list_incidents():
     assert result["count"] == 3
 
 def test_list_incidents_accepts_none_filters():
-    result = list_incidents(severity=None, status=None, limit=None)
+    result = list_incidents(severity=None, status=None)
 
     assert result["count"] == 3
     assert len(result["incidents"]) == 3
@@ -44,18 +44,19 @@ def test_get_incident_details_discovers_related_traces():
 
 
 def test_get_incident_details_with_no_related_traces(monkeypatch):
-    from ops_copilot.server import TRACES
+    from ops_copilot.server import data_source
 
-    # Temporarily remove the incident's trace from the test data.
+    # Simulate a data source without traces for INC-002.
     traces_without_incident = {
         trace_id: trace
-        for trace_id, trace in TRACES.items()
+        for trace_id, trace in data_source.get_traces().items()
         if trace["incident_id"] != "INC-002"
     }
 
     monkeypatch.setattr(
-        "ops_copilot.server.TRACES",
-        traces_without_incident,
+        data_source,
+        "get_traces",
+        lambda: traces_without_incident,
     )
 
     result = get_incident_details("INC-002")

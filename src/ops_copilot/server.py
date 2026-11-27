@@ -2,16 +2,11 @@
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from ops_copilot.data_sources.synthetic import (
-    INCIDENTS,
-    LOGS,
-    SERVICE_METRICS,
-    TRACES,
-    DEPLOYMENTS,
-)
+from ops_copilot.data_sources.base import SyntheticDataSource
 from ops_copilot.services.correlation import analyze_incident
 
 mcp = FastMCP("ai-engineering-ops-copilot")
+data_source = SyntheticDataSource()
 
 @mcp.tool()
 def list_incidents(
@@ -45,10 +40,10 @@ def list_incidents(
     }:
         return {"error": "Invalid status filter"}
 
-    # Apply filters.
+    # Apply filters using the data source.
     results = [
         item
-        for item in INCIDENTS.values()
+        for item in data_source.get_incidents().values()
         if (not severity or item["severity"] == severity)
         and (not status or item["status"] == status)
     ]
@@ -68,20 +63,20 @@ def get_incident_details(incident_id: str) -> dict[str, Any]:
     """Return incident details, associated logs, and related trace IDs."""
 
     incident_id = (incident_id or "").strip().upper()
-    incident = INCIDENTS.get(incident_id)
+    incident = data_source.get_incidents().get(incident_id)
 
     if incident is None:
         return {"error": f"Incident not found: {incident_id}"}
 
     related_logs = [
         log.copy()
-        for log in LOGS
+        for log in data_source.get_logs()
         if log["incident_id"] == incident_id
     ]
 
     related_trace_ids = sorted(
         trace_id
-        for trace_id, trace in TRACES.items()
+        for trace_id, trace in data_source.get_traces().items()
         if trace.get("incident_id") == incident_id
     )
 
@@ -116,7 +111,7 @@ def search_application_logs(
 
     results = [
         log
-        for log in LOGS
+        for log in data_source.get_logs()
         if query in log["message"].lower()
         and (not service or service in log["service"].lower())
         and (not level or log["level"] == level)
@@ -140,7 +135,7 @@ def analyze_error_patterns(
     # Use the existing application log dataset.
     matching_logs = [
         log
-        for log in LOGS
+        for log in data_source.get_logs()
         if str(log.get("level", "")).upper() in {"ERROR", "CRITICAL"}
         and (
             not service
@@ -194,16 +189,16 @@ def get_service_metrics(
     service: str | None = None,
 ) -> dict[str, Any]:
     """Retrieve simulated health metrics for known services."""
-
+    metrics_data = data_source.get_service_metrics()
     service = (service or "").strip().lower()
 
     if service:
-        metrics = SERVICE_METRICS.get(service)
+        metrics = metrics_data.get(service)
 
         if metrics is None:
             return {
                 "error": f"Unknown service: {service}",
-                "available_services": sorted(SERVICE_METRICS),
+                "available_services": sorted(metrics_data),
             }
 
         return {
@@ -216,9 +211,9 @@ def get_service_metrics(
     return {
         "services": {
             name: metrics.copy()
-            for name, metrics in sorted(SERVICE_METRICS.items())
+            for name, metrics in sorted(metrics_data.items())
         },
-        "count": len(SERVICE_METRICS),
+        "count": len(metrics_data),
         "data_source": "synthetic development data",
         "is_simulated": True,
     }
@@ -234,12 +229,12 @@ def get_trace_details(trace_id: str) -> dict[str, Any]:
     if not trace_id:
         return {"error": "trace_id must not be empty"}
 
-    trace = TRACES.get(trace_id)
+    trace = data_source.get_traces().get(trace_id)
 
     if trace is None:
         return {
             "error": f"Trace not found: {trace_id}",
-            "available_trace_ids": sorted(TRACES.keys()),
+            "available_trace_ids": sorted(data_source.get_traces().keys()),
         }
 
     # Return a copy so callers cannot mutate the stored trace data.
@@ -261,12 +256,12 @@ def analyze_incident_tool(incident_id: str) -> dict[str, Any]:
     automatically; findings summarize observed log activity.
     """
     normalized_id = incident_id.strip().upper()
-    incident = INCIDENTS.get(normalized_id)
+    incident = data_source.get_incidents().get(normalized_id)
 
     if incident is None:
         return {"error": f"Incident not found: {normalized_id}"}
 
-    return analyze_incident(incident, LOGS)
+    return analyze_incident(incident, data_source.get_logs())
 
 @mcp.tool()
 def get_deployment_history(
@@ -287,7 +282,7 @@ def get_deployment_history(
             "error": "Limit must be between 1 and 100."
         }
 
-    deployments = DEPLOYMENTS.copy()
+    deployments = data_source.get_deployments().copy()
 
     if service:
         deployments = [
@@ -343,7 +338,7 @@ def correlate_incident_changes(
         }
 
     # 1. Retrieve the incident
-    incident = INCIDENTS.get(incident_id)
+    incident = data_source.get_incidents().get(incident_id)
 
     if not incident:
         return {
@@ -356,7 +351,7 @@ def correlate_incident_changes(
     # 2. Retrieve logs associated with the incident
     incident_logs = [
         log
-        for log in LOGS
+        for log in data_source.get_logs()
         if log.get("incident_id", "").upper() == incident_id
     ]
 
@@ -386,7 +381,7 @@ def correlate_incident_changes(
     # 4. Retrieve deployments belonging to the same service
     service_deployments = [
         deployment
-        for deployment in DEPLOYMENTS
+        for deployment in data_source.get_deployments()
         if deployment.get("service", "").lower() == service.lower()
     ]
 
